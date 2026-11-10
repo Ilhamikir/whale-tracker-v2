@@ -14,12 +14,12 @@ concurrency:
 
 jobs:
   scan:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -40,11 +40,26 @@ jobs:
         run: |
           git config user.name "whale-bot"
           git config user.email "whale-bot@users.noreply.github.com"
-          git add state.json sinyal_log.csv 2>/dev/null || true
+          for f in state.json sinyal_log.csv; do
+            if [ -f "$f" ]; then git add "$f"; fi
+          done
           if git diff --cached --quiet; then
-            echo "Tidak ada perubahan"
-          else
-            git commit -m "Pembaruan whale tracker"
-            git pull --rebase --autostash || true
-            git push
+            echo "Tidak ada perubahan untuk disimpan"
+            exit 0
           fi
+          git commit -q -m "Pembaruan whale tracker"
+          for i in 1 2 3; do
+            if git push -q 2> push_err.txt; then
+              echo "State dan log tersimpan"
+              exit 0
+            fi
+            cat push_err.txt
+            if grep -qiE "403|denied|permission" push_err.txt; then
+              echo "::error title=Izin menyimpan ditolak::Buka Settings, Actions, General. Di bagian Workflow permissions pilih Read and write permissions, lalu Save."
+              exit 1
+            fi
+            git pull -q --rebase || git rebase --abort || true
+            sleep 5
+          done
+          echo "::error title=Gagal menyimpan::Push gagal 3 kali. Salin isi log langkah ini dan kirim ke Claude."
+          exit 1
