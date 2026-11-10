@@ -1,0 +1,50 @@
+name: Whale Tracker
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: whale-tracker
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Pasang pustaka
+        run: pip install -r requirements.txt
+
+      - name: Pindai whale dan kirim sinyal
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          WHALE_MIN_USD: ${{ vars.WHALE_MIN_USD || '300000' }}
+          MAX_PRICE_CHANGE_24H: ${{ vars.MAX_PRICE_CHANGE_24H || '3' }}
+          MIN_CONVICTION: ${{ vars.MIN_CONVICTION || '50' }}
+        run: python whale_bot.py
+
+      - name: Simpan state dan log
+        if: always()
+        run: |
+          git config user.name "whale-bot"
+          git config user.email "whale-bot@users.noreply.github.com"
+          git add state.json sinyal_log.csv 2>/dev/null || true
+          if git diff --cached --quiet; then
+            echo "Tidak ada perubahan"
+          else
+            git commit -m "Pembaruan whale tracker"
+            git pull --rebase --autostash || true
+            git push
+          fi
